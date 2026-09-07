@@ -309,19 +309,27 @@ class Aeon3DApp {
     try {
       if (this.ui) this.ui.setLoadingStatus('PLATEAU 3D建築物モデルを接続中...');
       const tileset = await Cesium.Cesium3DTileset.fromUrl(CONFIG.plateau3dTilesUrl, {
-        maximumScreenSpaceError: 12, // LOD2実写テクスチャと屋根・窓・壁面をスムーズにロード
-        dynamicScreenSpaceError: true,
+        maximumScreenSpaceError: 16,        // 遠景の過剰なモデル読込を抑制
+        maximumMemoryUsage: 256,            // GPUキャッシュ上限を256MBに制限（メモリ肥大化を防止）
+        skipLevelOfDetail: true,            // 中間LODをスキップ（通信量・負荷を大幅削減）
+        baseScreenSpaceError: 1024,
+        skipScreenSpaceErrorFactor: 16,
+        skipLevels: 1,
+        dynamicScreenSpaceError: true,      // 視点距離に応じて動的にエラー許容値を調整
         dynamicScreenSpaceErrorDensity: 0.00278,
         dynamicScreenSpaceErrorFactor: 4.0,
+        cullWithChildrenBounds: true,       // 画面外タイルの高速カリング
       });
 
-      // PLATEAU 3D Tilesの実写フォトリアリスティック・テクスチャをそのまま美しくレンダリング
-      // (スタイルカラーを単色で強制上書きせず、実写外壁・窓・屋根・看板テクスチャを活かす)
+      // PLATEAU 3D Tilesのテクスチャをそのままレンダリング
       tileset.colorBlendMode = Cesium.Cesium3DTileColorBlendMode.HIGHLIGHT;
+
+      // 初期状態では3D建築物を非表示（日本全景での無駄な通信・GPU負荷をカット）
+      tileset.show = false;
 
       this.plateauTileset = tileset;
       this.viewer.scene.primitives.add(tileset);
-      console.log('[✓] PLATEAU 全国建築物 3D Tiles (LOD2実写テクスチャ/LOD1) を追加しました');
+      console.log('[✓] PLATEAU 全国建築物 3D Tiles を接続しました (初期状態: OFF)');
     } catch (err) {
       console.warn('[!] PLATEAU 3D Tiles の読み込みに失敗しました:', err);
     }
