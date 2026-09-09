@@ -34,11 +34,17 @@
             <p class="brand-subtitle">Project PLATEAU × CesiumJS</p>
           </div>
         </div>
-        <button id="sidebarToggleBtn" class="icon-btn" title="サイドバーの折りたたみ" aria-label="Toggle Sidebar">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
-        </button>
+        <div class="header-right-actions">
+          <button id="userSyncBtn" class="user-sync-badge-btn" title="スタンプ進捗同期 & ユーザーID設定">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            <span id="userBadgeText" class="user-badge-text">User</span>
+          </button>
+          <button id="sidebarToggleBtn" class="icon-btn" title="サイドバーの折りたたみ" aria-label="Toggle Sidebar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- Stats Summary Banner -->
@@ -59,6 +65,24 @@
         </div>
       </div>
 
+      <!-- Stamp Rally Progress Banner -->
+      <div class="stamp-progress-card" id="stampProgressCard">
+        <div class="stamp-progress-header">
+          <div class="stamp-rally-title">
+            <span class="stamp-rally-icon">★</span>
+            <span>全国制覇スタンプラリー</span>
+          </div>
+          <span id="stampProgressRate" class="stamp-progress-rate">0.0%</span>
+        </div>
+        <div class="stamp-progress-bar-wrap">
+          <div id="stampProgressBarFill" class="stamp-progress-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div class="stamp-progress-meta">
+          <span id="stampVisitedCount">0 / 601 店舗訪問</span>
+          <span id="stampPrefCount">0 / 47 都道府県</span>
+        </div>
+      </div>
+
       <!-- Search & Filters -->
       <div class="filter-section">
         <div class="search-box">
@@ -73,9 +97,12 @@
         <!-- Filter Tabs -->
         <div class="category-tabs" role="tablist">
           <button class="tab-btn active" data-filter="all">全店舗</button>
-          <button class="tab-btn" data-filter="イオンモール">イオンモール</button>
+          <button class="tab-btn" data-filter="イオンモール">モール</button>
           <button class="tab-btn" data-filter="イオンスタイル">スタイル</button>
-          <button class="tab-btn" data-filter="一般イオン">一般店舗</button>
+          <button class="tab-btn" data-filter="一般イオン">一般</button>
+          <button class="tab-btn stamp-tab-btn" data-filter="visited" title="訪問記録のある店舗のみ表示">
+            ★ 訪問済 (<span id="visitedTabCount">0</span>)
+          </button>
         </div>
 
         <!-- Prefecture Filter -->
@@ -272,6 +299,32 @@
           <span id="detailHours" class="detail-val">営業時間</span>
         </div>
 
+        <!-- Visit Stamp Card Component (スタンプ機能) -->
+        <div id="detailStampSection" class="detail-stamp-section">
+          <div id="stampUnvisitedWrap" class="stamp-unvisited-wrap">
+            <button id="stampActionBtn" class="stamp-press-btn" title="このイオンへの来訪スタンプを押す">
+              <span class="stamp-btn-star">★</span>
+              <span class="stamp-btn-text">訪問スタンプを押す (行った！)</span>
+            </button>
+          </div>
+          <div id="stampVisitedWrap" class="stamp-visited-wrap" style="display: none;">
+            <div class="stamp-seal-badge">
+              <div class="stamp-seal-inner">
+                <span class="stamp-seal-star">★</span>
+                <span class="stamp-seal-text">訪問済</span>
+                <span id="stampVisitedDate" class="stamp-seal-date">2026/09/09</span>
+              </div>
+            </div>
+            <div class="stamp-details">
+              <div class="stamp-memo-box">
+                <input type="text" id="stampMemoInput" placeholder="来訪メモ (例: 家族とフードコートで食事)" maxlength="60" />
+                <button id="stampMemoSaveBtn" class="stamp-memo-save-btn" title="メモを保存">保存</button>
+              </div>
+              <button id="stampRemoveBtn" class="stamp-remove-btn" title="訪問記録を取り消す">スタンプ取消</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Spatial Statistical Footprint / Extent Section -->
         <div class="extent-stat-section">
           <div class="extent-header">
@@ -348,6 +401,78 @@
           <a id="detailWebLink" href="#" target="_blank" rel="noopener noreferrer" class="action-btn secondary-action" title="公式ウェブサイトへ">
             Web
           </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Firebase & User ID Sync Modal -->
+    <div id="syncModal" class="modal-overlay" style="display: none;">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <h3 class="modal-title">スタンプ進捗 & Firebase同期</h3>
+          </div>
+          <button id="syncModalCloseBtn" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-section">
+            <label class="modal-label">現在のユーザーID (この端末)</label>
+            <div class="input-with-action">
+              <input type="text" id="modalCurrentUserId" readonly class="styled-input mono-font" />
+              <button id="copyUserIdBtn" class="modal-action-btn">コピー</button>
+            </div>
+            <p class="modal-tip">このユーザーIDを他端末に入力することで、訪問スタンプの進捗を共有できます。</p>
+          </div>
+
+          <div class="modal-section">
+            <label class="modal-label">別端末のユーザーIDに切り替え / 復元</label>
+            <div class="input-with-action">
+              <input type="text" id="modalSwitchUserId" placeholder="共有したいユーザーIDを入力..." class="styled-input mono-font" />
+              <button id="applyUserIdBtn" class="modal-action-btn primary">適用</button>
+            </div>
+          </div>
+
+          <div class="modal-section">
+            <label class="modal-label">クラウド同期状態</label>
+            <div class="sync-status-badge" id="syncStatusBadge">
+              <span class="status-indicator-dot" id="syncStatusDot"></span>
+              <span id="syncStatusText">ローカル保存モード (即座にご利用可能)</span>
+            </div>
+            <p class="modal-tip" id="syncStatusDesc">Firebaseプロジェクト設定を追加すると、Firestoreでリアルタイム同期されます。</p>
+          </div>
+
+          <details class="modal-details">
+            <summary class="modal-summary">Firebase カスタム接続設定 (任意)</summary>
+            <div class="details-content">
+              <p class="modal-tip">ご自身のFirebaseプロジェクトのWebアプリ構成を入力して直接同期できます。</p>
+              <div class="form-row">
+                <label>Project ID</label>
+                <input type="text" id="cfgProjectId" placeholder="my-aeon-project" class="styled-input" />
+              </div>
+              <div class="form-row">
+                <label>API Key</label>
+                <input type="password" id="cfgApiKey" placeholder="AIzaSy..." class="styled-input" />
+              </div>
+              <div class="form-actions">
+                <button id="saveCustomFirebaseBtn" class="modal-action-btn primary">設定を保存</button>
+                <button id="resetCustomFirebaseBtn" class="modal-action-btn">初期化</button>
+              </div>
+            </div>
+          </details>
+
+          <div class="modal-section">
+            <label class="modal-label">データバックアップ / 復元</label>
+            <div class="backup-btn-row">
+              <button id="exportStampsBtn" class="modal-action-btn">JSONエクスポート</button>
+              <label class="modal-action-btn file-upload-label">
+                JSONインポート
+                <input type="file" id="importStampsInput" accept=".json" style="display: none;" />
+              </label>
+            </div>
+          </div>
         </div>
       </div>
     </div>

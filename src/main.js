@@ -6,6 +6,7 @@
 
 import { CONFIG } from './config.js';
 import { UIController } from './ui.js';
+import { stampManager } from './stampManager.js';
 
 class Aeon3DApp {
   constructor() {
@@ -83,56 +84,90 @@ class Aeon3DApp {
 
   /**
    * イオンブランドカラー（マゼンタ #ae1e66）の3DカスタムピンアイコンをCanvasで動的生成
+   * 訪問済みスタンプ獲得済みの店舗には特別なゴールド星型バッジピンを生成
    */
   initPinGraphics() {
-    this.pinIcons.mall = this.createPinDataUrl('#ae1e66', 'MALL');
-    this.pinIcons.style = this.createPinDataUrl('#7c3aed', 'STYLE');
-    this.pinIcons.general = this.createPinDataUrl('#0d9488', 'AEON');
+    this.pinIcons.mall = this.createPinDataUrl('#ae1e66', 'MALL', false);
+    this.pinIcons.style = this.createPinDataUrl('#7c3aed', 'STYLE', false);
+    this.pinIcons.general = this.createPinDataUrl('#0d9488', 'AEON', false);
+
+    // 訪問済スタンプ獲得ピン（ゴールドクラウン仕様）
+    this.pinIcons.mall_visited = this.createPinDataUrl('#ae1e66', 'MALL', true);
+    this.pinIcons.style_visited = this.createPinDataUrl('#7c3aed', 'STYLE', true);
+    this.pinIcons.general_visited = this.createPinDataUrl('#0d9488', 'AEON', true);
   }
 
-  createPinDataUrl(color, label) {
+  getPinIcon(mallType, isVisited) {
+    const isMall = mallType === 'イオンモール';
+    const isStyle = mallType === 'イオンスタイル';
+    const key = isMall ? 'mall' : (isStyle ? 'style' : 'general');
+    return this.pinIcons[isVisited ? `${key}_visited` : key];
+  }
+
+  createPinDataUrl(color, label, isVisited = false) {
     const canvas = document.createElement('canvas');
     canvas.width = 64;
-    canvas.height = 76;
+    canvas.height = 80;
     const ctx = canvas.getContext('2d');
 
     // Drop shadow
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-    ctx.shadowBlur = 8;
+    ctx.shadowColor = isVisited ? 'rgba(245, 158, 11, 0.65)' : 'rgba(0, 0, 0, 0.45)';
+    ctx.shadowBlur = isVisited ? 12 : 8;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 4;
 
     // Pin Body (Tear drop shape)
     ctx.beginPath();
-    ctx.arc(32, 28, 24, Math.PI * 0.8, Math.PI * 0.2, false);
-    ctx.lineTo(32, 68);
+    ctx.arc(32, 30, 24, Math.PI * 0.8, Math.PI * 0.2, false);
+    ctx.lineTo(32, 72);
     ctx.closePath();
-    ctx.fillStyle = color;
+    ctx.fillStyle = isVisited ? '#d97706' : color;
     ctx.fill();
 
     // Reset shadow for border & contents
     ctx.shadowColor = 'transparent';
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = isVisited ? 3.0 : 2.5;
+    ctx.strokeStyle = isVisited ? '#fef3c7' : '#ffffff';
     ctx.stroke();
 
     // Inner Circle Badge
     ctx.beginPath();
-    ctx.arc(32, 28, 17, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
+    ctx.arc(32, 30, 17, 0, Math.PI * 2);
+    ctx.fillStyle = isVisited ? '#fffbeb' : '#ffffff';
     ctx.fill();
 
-    // Inner Shopping Bag / Text glyph
-    ctx.fillStyle = color;
-    ctx.font = 'bold 9px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, 32, 28);
+    // Inner Glyph (Visited: ★, Unvisited: MALL/STYLE/AEON)
+    if (isVisited) {
+      ctx.fillStyle = '#b45309';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('★', 32, 30);
+
+      // Star badge on upper-right corner
+      ctx.beginPath();
+      ctx.arc(48, 15, 9, 0, Math.PI * 2);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText('済', 48, 15);
+    } else {
+      ctx.fillStyle = color;
+      ctx.font = 'bold 9px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, 32, 30);
+    }
 
     // Tip dot
     ctx.beginPath();
-    ctx.arc(32, 68, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
+    ctx.arc(32, 72, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = isVisited ? '#fef3c7' : '#ffffff';
     ctx.fill();
 
     return canvas.toDataURL('image/png');
@@ -387,7 +422,8 @@ class Aeon3DApp {
     this.locations.forEach((loc) => {
       const isMall = loc.mall_type === 'イオンモール';
       const isStyle = loc.mall_type === 'イオンスタイル';
-      const pinImage = isMall ? this.pinIcons.mall : (isStyle ? this.pinIcons.style : this.pinIcons.general);
+      const isVisited = stampManager.hasStamped(loc.id);
+      const pinImage = this.getPinIcon(loc.mall_type, isVisited);
       const colorHex = isMall ? '#ae1e66' : (isStyle ? '#7c3aed' : '#0d9488');
       const bldgHeight = loc.building_height_est_m || (isMall ? 22.0 : (isStyle ? 16.0 : 12.0));
 
@@ -405,7 +441,9 @@ class Aeon3DApp {
           name: `${loc.name} (実測敷地外形)`,
           polygon: {
             hierarchy: Cesium.Cartesian3.fromDegreesArray(flatDegrees),
-            material: Cesium.Color.fromCssColorString(colorHex).withAlpha(0.35),
+            material: isVisited
+              ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.45)
+              : Cesium.Color.fromCssColorString(colorHex).withAlpha(0.35),
             classificationType: Cesium.ClassificationType.BOTH,
           },
           properties: loc,
@@ -421,8 +459,8 @@ class Aeon3DApp {
         position: Cesium.Cartesian3.fromDegrees(loc.lon, loc.lat, 0),
         billboard: {
           image: pinImage,
-          width: 32,
-          height: 38,
+          width: isVisited ? 36 : 32,
+          height: isVisited ? 44 : 38,
           verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
           horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
@@ -436,6 +474,34 @@ class Aeon3DApp {
     });
 
     await this.viewer.dataSources.add(this.dataSource);
+
+    // スタンプ状態が更新された際に3Dピンとポリゴンの外観を動的更新
+    stampManager.onChange(() => {
+      this.updatePinsStampStatus();
+    });
+  }
+
+  updatePinsStampStatus() {
+    this.locations.forEach((loc) => {
+      const pinEntity = this.entityMap.get(loc.id);
+      if (pinEntity && pinEntity.billboard) {
+        const isVisited = stampManager.hasStamped(loc.id);
+        pinEntity.billboard.image = this.getPinIcon(loc.mall_type, isVisited);
+        pinEntity.billboard.width = isVisited ? 36 : 32;
+        pinEntity.billboard.height = isVisited ? 44 : 38;
+      }
+
+      const polyEntity = this.polygonEntityMap.get(loc.id);
+      if (polyEntity && polyEntity.polygon) {
+        const isVisited = stampManager.hasStamped(loc.id);
+        const isMall = loc.mall_type === 'イオンモール';
+        const isStyle = loc.mall_type === 'イオンスタイル';
+        const colorHex = isMall ? '#ae1e66' : (isStyle ? '#7c3aed' : '#0d9488');
+        polyEntity.polygon.material = isVisited
+          ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.45)
+          : Cesium.Color.fromCssColorString(colorHex).withAlpha(0.35);
+      }
+    });
   }
 
   createClusterBadge(count) {

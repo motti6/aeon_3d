@@ -1,7 +1,11 @@
 /**
  * AEON 3D Explorer - UI Controller
  * サイドバー、リスト描画、検索、フィルター、詳細カード、イベント制御
+ * Firebase ユーザーID連携・来訪スタンプ機能・進捗管理
  */
+
+import { stampManager } from './stampManager.js';
+import { firebaseService } from './firebase.js';
 
 export class UIController {
   constructor(options) {
@@ -19,15 +23,17 @@ export class UIController {
     this.onResetCompass = options.onResetCompass || (() => {});
 
     this.selectedLocation = null;
-    this.currentFilter = 'all'; // 'all' | 'イオンモール' | 'イオンスタイル'
+    this.currentFilter = 'all'; // 'all' | 'イオンモール' | 'イオンスタイル' | '一般イオン' | 'visited'
     this.currentPrefecture = '';
     this.searchQuery = '';
     this.isOrbiting = false;
 
     this.initElements();
+    this.initStampIntegration();
     this.bindEvents();
     this.populatePrefectureDropdown();
     this.renderStats();
+    this.renderStampProgress();
     this.renderList();
   }
 
@@ -36,11 +42,21 @@ export class UIController {
     this.sidebar = document.getElementById('sidebar');
     this.sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
     this.sidebarToggleBtnOutside = document.getElementById('sidebarToggleBtnOutside');
+    this.userSyncBtn = document.getElementById('userSyncBtn');
+    this.userBadgeText = document.getElementById('userBadgeText');
 
     // Stats
     this.statTotalCount = document.getElementById('statTotalCount');
     this.statMallCount = document.getElementById('statMallCount');
     this.statStyleCount = document.getElementById('statStyleCount');
+
+    // Stamp Progress Card
+    this.stampProgressCard = document.getElementById('stampProgressCard');
+    this.stampProgressRate = document.getElementById('stampProgressRate');
+    this.stampProgressBarFill = document.getElementById('stampProgressBarFill');
+    this.stampVisitedCount = document.getElementById('stampVisitedCount');
+    this.stampPrefCount = document.getElementById('stampPrefCount');
+    this.visitedTabCount = document.getElementById('visitedTabCount');
 
     // Search & Filter
     this.searchInput = document.getElementById('searchInput');
@@ -92,6 +108,16 @@ export class UIController {
     this.perspectiveViewBtn = document.getElementById('perspectiveViewBtn');
     this.detailWebLink = document.getElementById('detailWebLink');
 
+    // Stamp Components in Detail Card
+    this.detailStampSection = document.getElementById('detailStampSection');
+    this.stampUnvisitedWrap = document.getElementById('stampUnvisitedWrap');
+    this.stampVisitedWrap = document.getElementById('stampVisitedWrap');
+    this.stampActionBtn = document.getElementById('stampActionBtn');
+    this.stampVisitedDate = document.getElementById('stampVisitedDate');
+    this.stampMemoInput = document.getElementById('stampMemoInput');
+    this.stampMemoSaveBtn = document.getElementById('stampMemoSaveBtn');
+    this.stampRemoveBtn = document.getElementById('stampRemoveBtn');
+
     // Spatial extent stats
     this.extentSiteArea = document.getElementById('extentSiteArea');
     this.extentFloorArea = document.getElementById('extentFloorArea');
@@ -101,9 +127,72 @@ export class UIController {
     this.copyGeoJsonBtn = document.getElementById('copyGeoJsonBtn');
     this.copyGeoJsonText = document.getElementById('copyGeoJsonText');
 
+    // Sync Modal
+    this.syncModal = document.getElementById('syncModal');
+    this.syncModalCloseBtn = document.getElementById('syncModalCloseBtn');
+    this.modalCurrentUserId = document.getElementById('modalCurrentUserId');
+    this.copyUserIdBtn = document.getElementById('copyUserIdBtn');
+    this.modalSwitchUserId = document.getElementById('modalSwitchUserId');
+    this.applyUserIdBtn = document.getElementById('applyUserIdBtn');
+    this.syncStatusDot = document.getElementById('syncStatusDot');
+    this.syncStatusText = document.getElementById('syncStatusText');
+    this.syncStatusDesc = document.getElementById('syncStatusDesc');
+    this.cfgProjectId = document.getElementById('cfgProjectId');
+    this.cfgApiKey = document.getElementById('cfgApiKey');
+    this.saveCustomFirebaseBtn = document.getElementById('saveCustomFirebaseBtn');
+    this.resetCustomFirebaseBtn = document.getElementById('resetCustomFirebaseBtn');
+    this.exportStampsBtn = document.getElementById('exportStampsBtn');
+    this.importStampsInput = document.getElementById('importStampsInput');
+
     // Loading overlay
     this.loadingOverlay = document.getElementById('loadingOverlay');
     this.loadingStatusText = document.getElementById('loadingStatusText');
+  }
+
+  initStampIntegration() {
+    this.updateUserBadge();
+
+    // スタンプデータ変更監視
+    stampManager.onChange(() => {
+      this.renderStampProgress();
+      if (this.selectedLocation) {
+        this.renderDetailStamp(this.selectedLocation);
+      }
+      this.renderList();
+    });
+
+    // Firebase 認証・同期ステータス変更監視
+    firebaseService.onAuthChanged(() => {
+      this.updateUserBadge();
+      this.updateSyncModalStatus();
+    });
+  }
+
+  updateUserBadge() {
+    if (!this.userBadgeText) return;
+    const uid = stampManager.getUserId();
+    const shortUid = uid.length > 10 ? uid.substring(0, 8) + '…' : uid;
+    this.userBadgeText.textContent = shortUid;
+  }
+
+  renderStampProgress() {
+    const stats = stampManager.getStats(this.locations);
+
+    if (this.stampProgressRate) {
+      this.stampProgressRate.textContent = `${stats.percent}%`;
+    }
+    if (this.stampProgressBarFill) {
+      this.stampProgressBarFill.style.width = `${Math.min(100, stats.percent)}%`;
+    }
+    if (this.stampVisitedCount) {
+      this.stampVisitedCount.textContent = `${stats.visitedCount} / ${stats.totalCount} 店舗訪問`;
+    }
+    if (this.stampPrefCount) {
+      this.stampPrefCount.textContent = `${stats.visitedPrefCount} / ${stats.totalPrefCount} 都道府県`;
+    }
+    if (this.visitedTabCount) {
+      this.visitedTabCount.textContent = stats.visitedCount;
+    }
   }
 
   bindEvents() {
@@ -112,6 +201,122 @@ export class UIController {
     this.navZoomOutBtn?.addEventListener('click', () => this.onZoomOut());
     this.navTiltToggleBtn?.addEventListener('click', () => this.onToggleTilt());
     this.navCompassBtn?.addEventListener('click', () => this.onResetCompass());
+
+    // User Sync Button -> Open Modal
+    this.userSyncBtn?.addEventListener('click', () => {
+      this.openSyncModal();
+    });
+
+    // Modal Close
+    this.syncModalCloseBtn?.addEventListener('click', () => {
+      this.closeSyncModal();
+    });
+    this.syncModal?.addEventListener('click', (e) => {
+      if (e.target === this.syncModal) {
+        this.closeSyncModal();
+      }
+    });
+
+    // Copy User ID
+    this.copyUserIdBtn?.addEventListener('click', () => {
+      if (!this.modalCurrentUserId) return;
+      navigator.clipboard.writeText(this.modalCurrentUserId.value).then(() => {
+        const originalText = this.copyUserIdBtn.textContent;
+        this.copyUserIdBtn.textContent = 'コピー完了！';
+        setTimeout(() => {
+          this.copyUserIdBtn.textContent = originalText;
+        }, 1800);
+      });
+    });
+
+    // Apply Switch User ID
+    this.applyUserIdBtn?.addEventListener('click', () => {
+      const newId = this.modalSwitchUserId.value.trim();
+      if (!newId) return;
+      stampManager.setUserId(newId);
+      this.modalCurrentUserId.value = newId;
+      this.modalSwitchUserId.value = '';
+      const originalText = this.applyUserIdBtn.textContent;
+      this.applyUserIdBtn.textContent = '同期完了！';
+      setTimeout(() => {
+        this.applyUserIdBtn.textContent = originalText;
+      }, 1800);
+    });
+
+    // Save Custom Firebase Config
+    this.saveCustomFirebaseBtn?.addEventListener('click', async () => {
+      const projectId = this.cfgProjectId?.value.trim();
+      const apiKey = this.cfgApiKey?.value.trim();
+      if (!projectId || !apiKey) {
+        alert('Project ID と API Key を入力してください。');
+        return;
+      }
+      await firebaseService.setCustomFirebaseConfig({ projectId, apiKey });
+      this.updateSyncModalStatus();
+      alert('Firebase設定を保存し接続を試行しました。');
+    });
+
+    this.resetCustomFirebaseBtn?.addEventListener('click', async () => {
+      await firebaseService.setCustomFirebaseConfig(null);
+      if (this.cfgProjectId) this.cfgProjectId.value = '';
+      if (this.cfgApiKey) this.cfgApiKey.value = '';
+      this.updateSyncModalStatus();
+      alert('Firebase設定をクリアしローカルモードに戻しました。');
+    });
+
+    // Export JSON
+    this.exportStampsBtn?.addEventListener('click', () => {
+      const json = stampManager.exportStampsJson();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `aeon_stamps_${new Date().toISOString().substring(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Import JSON
+    this.importStampsInput?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        await stampManager.importStampsJson(text);
+        alert('スタンプデータをインポートしました！');
+      } catch (err) {
+        alert('インポートに失敗しました: ' + err.message);
+      }
+      e.target.value = '';
+    });
+
+    // Stamp Action Button in Detail Card
+    this.stampActionBtn?.addEventListener('click', async () => {
+      if (!this.selectedLocation) return;
+      this.stampActionBtn.classList.add('stamping');
+      await stampManager.addStamp(this.selectedLocation);
+      this.stampActionBtn.classList.remove('stamping');
+    });
+
+    // Stamp Memo Save
+    this.stampMemoSaveBtn?.addEventListener('click', async () => {
+      if (!this.selectedLocation) return;
+      const memo = this.stampMemoInput?.value || '';
+      await stampManager.updateMemo(this.selectedLocation.id, memo);
+      const originalText = this.stampMemoSaveBtn.textContent;
+      this.stampMemoSaveBtn.textContent = '保存済';
+      setTimeout(() => {
+        this.stampMemoSaveBtn.textContent = originalText;
+      }, 1500);
+    });
+
+    // Stamp Remove
+    this.stampRemoveBtn?.addEventListener('click', async () => {
+      if (!this.selectedLocation) return;
+      if (confirm(`「${this.selectedLocation.name}」の訪問スタンプを取り消しますか？`)) {
+        await stampManager.removeStamp(this.selectedLocation.id);
+      }
+    });
 
     // Download Polygons GeoJSON
     this.downloadPolygonsBtn?.addEventListener('click', () => {
@@ -269,10 +474,48 @@ export class UIController {
     });
   }
 
+  openSyncModal() {
+    if (!this.syncModal) return;
+    if (this.modalCurrentUserId) {
+      this.modalCurrentUserId.value = stampManager.getUserId();
+    }
+    const customConfig = firebaseService.getCustomFirebaseConfig();
+    if (customConfig) {
+      if (this.cfgProjectId) this.cfgProjectId.value = customConfig.projectId || '';
+      if (this.cfgApiKey) this.cfgApiKey.value = customConfig.apiKey || '';
+    }
+    this.updateSyncModalStatus();
+    this.syncModal.style.display = 'flex';
+  }
+
+  closeSyncModal() {
+    if (this.syncModal) {
+      this.syncModal.style.display = 'none';
+    }
+  }
+
+  updateSyncModalStatus() {
+    const isConnected = firebaseService.isConnected();
+    if (this.syncStatusDot) {
+      this.syncStatusDot.className = `status-indicator-dot ${isConnected ? 'online' : 'local'}`;
+    }
+    if (this.syncStatusText) {
+      this.syncStatusText.textContent = isConnected
+        ? 'Firebase Firestore クラウド同期中 (オンライン)'
+        : 'ローカル保存モード (即座にご利用可能)';
+    }
+    if (this.syncStatusDesc) {
+      this.syncStatusDesc.textContent = isConnected
+        ? 'あなたのユーザーIDに紐付く訪問スタンプは安全にFirebaseクラウドに同期されています。'
+        : 'スタンプはお使いのブラウザに即時保存されています。他端末と同期するにはユーザーIDを共有するかFirebase設定を追加してください。';
+    }
+  }
+
   setLocations(locations) {
     this.locations = locations;
     this.populatePrefectureDropdown();
     this.renderStats();
+    this.renderStampProgress();
     this.renderList();
   }
 
@@ -307,17 +550,19 @@ export class UIController {
 
   getFilteredLocations() {
     return this.locations.filter(loc => {
-      // Category filter
-      if (this.currentFilter !== 'all') {
+      // 訪問済み専用タブフィルター
+      if (this.currentFilter === 'visited') {
+        if (!stampManager.hasStamped(loc.id)) return false;
+      } else if (this.currentFilter !== 'all') {
         if (loc.mall_type !== this.currentFilter) return false;
       }
 
-      // Prefecture filter
+      // 都道府県フィルター
       if (this.currentPrefecture && loc.prefecture !== this.currentPrefecture) {
         return false;
       }
 
-      // Search query (matches name, name_en, address, city, prefecture)
+      // 検索キーワード
       if (this.searchQuery) {
         const q = this.searchQuery.toLowerCase();
         const n = (loc.name || '').toLowerCase();
@@ -345,8 +590,8 @@ export class UIController {
     if (filtered.length === 0) {
       this.locationList.innerHTML = `
         <div class="empty-placeholder">
-          <p>該当するイオン店舗が見つかりませんでした。</p>
-          <p style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">条件を変えて再検索してください。</p>
+          <p>${this.currentFilter === 'visited' ? '訪問済みスタンプがまだありません。' : '該当するイオン店舗が見つかりませんでした。'}</p>
+          <p style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">${this.currentFilter === 'visited' ? '店舗を選択して「訪問スタンプを押す」を記録してみましょう！' : '条件を変えて再検索してください。'}</p>
         </div>
       `;
       return;
@@ -355,15 +600,19 @@ export class UIController {
     const fragment = document.createDocumentFragment();
 
     filtered.forEach(loc => {
+      const isVisited = stampManager.hasStamped(loc.id);
       const card = document.createElement('div');
-      card.className = `facility-item ${this.selectedLocation?.id === loc.id ? 'selected' : ''}`;
+      card.className = `facility-item ${this.selectedLocation?.id === loc.id ? 'selected' : ''} ${isVisited ? 'visited-item' : ''}`;
       card.setAttribute('data-id', loc.id);
 
       const tagClass = loc.mall_type === 'イオンモール' ? 'tag-mall' : (loc.mall_type === 'イオンスタイル' ? 'tag-style' : 'tag-sc');
 
       card.innerHTML = `
         <div class="facility-item-header">
-          <span class="facility-item-title">${this.escapeHtml(loc.name)}</span>
+          <div class="facility-title-wrap">
+            ${isVisited ? '<span class="item-visited-icon" title="訪問済">★</span>' : ''}
+            <span class="facility-item-title">${this.escapeHtml(loc.name)}</span>
+          </div>
           <span class="facility-tag ${tagClass}">${this.escapeHtml(loc.mall_type)}</span>
         </div>
         <div class="facility-item-sub">
@@ -403,6 +652,29 @@ export class UIController {
     }
   }
 
+  renderDetailStamp(loc) {
+    const stamp = stampManager.getStamp(loc.id);
+    if (stamp) {
+      // 訪問済
+      if (this.stampUnvisitedWrap) this.stampUnvisitedWrap.style.display = 'none';
+      if (this.stampVisitedWrap) this.stampVisitedWrap.style.display = 'flex';
+      if (this.stampVisitedDate) {
+        const d = new Date(stamp.visitedAt);
+        const dateStr = !isNaN(d.getTime())
+          ? `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+          : '訪問済';
+        this.stampVisitedDate.textContent = dateStr;
+      }
+      if (this.stampMemoInput) {
+        this.stampMemoInput.value = stamp.memo || '';
+      }
+    } else {
+      // 未訪問
+      if (this.stampVisitedWrap) this.stampVisitedWrap.style.display = 'none';
+      if (this.stampUnvisitedWrap) this.stampUnvisitedWrap.style.display = 'flex';
+    }
+  }
+
   showDetailCard(loc) {
     if (!this.detailCard) return;
 
@@ -412,6 +684,9 @@ export class UIController {
     this.detailPrefBadge.textContent = loc.prefecture || '日本';
     this.detailAddress.textContent = loc.address || `${loc.prefecture} (位置座標)`;
     this.detailCoords.textContent = `経度: ${loc.lon.toFixed(5)}°, 緯度: ${loc.lat.toFixed(5)}°`;
+
+    // スタンプ情報の描画
+    this.renderDetailStamp(loc);
 
     if (loc.area && this.detailAreaRow) {
       this.detailAreaRow.style.display = 'flex';
