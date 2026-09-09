@@ -208,11 +208,20 @@ export class UIController {
     });
 
     // Modal Close
-    this.syncModalCloseBtn?.addEventListener('click', () => {
+    this.syncModalCloseBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       this.closeSyncModal();
     });
+
     this.syncModal?.addEventListener('click', (e) => {
       if (e.target === this.syncModal) {
+        this.closeSyncModal();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.syncModal && this.syncModal.style.display !== 'none') {
         this.closeSyncModal();
       }
     });
