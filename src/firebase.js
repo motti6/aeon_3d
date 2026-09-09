@@ -80,7 +80,15 @@ export class FirebaseService {
       };
     }
 
-    return null;
+    // 3. プロジェクト標準 Firebase 構成 (aeon3d-e9e6e)
+    return {
+      apiKey: 'AIzaSyCvzxMYReKxq81khpyBjD6s2A4HcEROLbw',
+      authDomain: 'aeon3d-e9e6e.firebaseapp.com',
+      projectId: 'aeon3d-e9e6e',
+      storageBucket: 'aeon3d-e9e6e.firebasestorage.app',
+      messagingSenderId: '707233348436',
+      appId: '1:707233348436:web:c6fd371177c797ece026c1',
+    };
   }
 
   /**
